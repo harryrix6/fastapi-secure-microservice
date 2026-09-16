@@ -53,7 +53,9 @@ jobs:
       - name: Run Pytest
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:password@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379/0
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
           SECRET_KEY: testsecretkeyfortestingonly12345
         run: |
           pytest
