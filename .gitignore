@@ -9,3 +9,10 @@ __pycache__/
 .vscode/
 .idea
 *.iml
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.lcov
