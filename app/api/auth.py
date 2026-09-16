@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_current_user, get_db
 from app.core.rate_limiter import RateLimiter
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
@@ -12,19 +12,21 @@ from app.schemas.user import UserCreate, UserResponse
 
 router = APIRouter()
 
+
 @router.post(
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Register New User",
+    description="Create a new user account with unique email address. Passwords are encrypted using Argon2.",
     dependencies=[Depends(RateLimiter(requests_limit=5, window_in_seconds=60))],
 )
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new user."""
     result = await db.execute(select(User).where(User.email == user_in.email))
     if result.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email already exists."
+            detail="A user with this email already exists.",
         )
 
     user = User(
@@ -36,16 +38,18 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
     return user
 
+
 @router.post(
     "/login",
     response_model=Token,
+    summary="User Login (Obtain JWT)",
+    description="Authenticate user credentials against PostgreSQL database and return a JWT Bearer access token.",
     dependencies=[Depends(RateLimiter(requests_limit=5, window_in_seconds=60))],
 )
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """Authenticate user and return access token."""
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
 
@@ -60,7 +64,11 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Get Active User Details",
+    description="Fetch user account information using the bearer token provided in the Authorization header.",
+)
 async def read_current_user(current_user: User = Depends(get_current_user)):
-    """Fetch current authenticated user details using JWT bearer token."""
     return current_user

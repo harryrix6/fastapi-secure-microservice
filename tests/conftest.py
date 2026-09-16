@@ -1,8 +1,8 @@
 from typing import AsyncGenerator
-import pytest
+
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from redis.asyncio import Redis
+from redis.asyncio import Redis, ConnectionPool
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
@@ -12,65 +12,88 @@ from sqlalchemy.ext.asyncio import (
 from app.config import settings
 from app.main import app
 from app.db.session import Base
+import app.db.redis as redis_module
+from app.db.redis import get_redis
 from app.api.deps import get_db
-from app.db.redis import init_redis_pool, close_redis_pool, pool as redis_pool
 
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
-async def setup_test_environment():
-    """Sets up fresh engine tables and Redis pool per test loop to prevent loop mismatch errors."""
-    # Create engine within current loop
+async def prepare_database():
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
-    session_factory = async_sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False
-    )
 
-    # Initialize DB tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Initialize Redis Pool
-    await init_redis_pool()
-    redis_client = Redis(connection_pool=redis_pool)
-    await redis_client.flushdb()
-
-    yield {
-        "engine": engine,
-        "session_factory": session_factory,
-        "redis": redis_client,
-    }
-
-    # Teardown
-    await redis_client.flushdb()
-    await redis_client.aclose()
-    await close_redis_pool()
+    yield engine
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
 
+
+@pytest_asyncio.fixture(scope="function")
+async def redis_client() -> AsyncGenerator[Redis, None]:
+    test_pool = ConnectionPool.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+    )
+
+    old_pool = getattr(redis_module, "pool", None)
+    redis_module.pool = test_pool
+
+    client = Redis(connection_pool=test_pool)
+
+    await client.flushdb()
+
+    yield client
+
+    await client.flushdb()
+    await client.aclose()
+    await test_pool.disconnect()
+
+    redis_module.pool = old_pool
+
+
 @pytest_asyncio.fixture(scope="function")
 async def db_session(
-    setup_test_environment: dict,
+    prepare_database,
 ) -> AsyncGenerator[AsyncSession, None]:
-    """Yields an isolated transactional DB session."""
-    session_factory = setup_test_environment["session_factory"]
+
+    engine = prepare_database
+
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
     async with session_factory() as session:
         yield session
         await session.rollback()
 
+
 @pytest_asyncio.fixture(scope="function")
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Provides an AsyncClient bound to the FastAPI app with DB dependency override."""
+async def client(
+    db_session: AsyncSession,
+    redis_client: Redis,
+) -> AsyncGenerator[AsyncClient, None]:
 
     async def _override_get_db():
         yield db_session
 
+    async def _override_get_redis():
+        yield redis_client
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_redis] = _override_get_redis
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()

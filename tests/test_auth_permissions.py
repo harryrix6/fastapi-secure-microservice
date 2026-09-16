@@ -1,14 +1,15 @@
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, get_password_hash
-from app.models.user import User  # Adjust import path if needed
+from app.models.user import User
 
 
 ME_ENDPOINT = "/api/auth/me"
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def active_user(db_session: AsyncSession) -> User:
     """Creates a regular active user."""
     user = User(
@@ -23,7 +24,7 @@ async def active_user(db_session: AsyncSession) -> User:
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def inactive_user(db_session: AsyncSession) -> User:
     """Creates an inactive user."""
     user = User(
@@ -38,7 +39,7 @@ async def inactive_user(db_session: AsyncSession) -> User:
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def superuser(db_session: AsyncSession) -> User:
     """Creates an active superuser."""
     user = User(

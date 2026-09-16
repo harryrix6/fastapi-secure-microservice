@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # 1. Import Base metadata and Settings from app.config
 from app.config import settings
 from app.db.session import Base
-import app.models.user  # Ensures User model is registered with Base.metadata
+
+# Ensures User model is registered with Base.metadata
+import app.models.user  # noqa: F401
 
 config = context.config
 
@@ -36,13 +38,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,  # Detects changes in column types for autogenerate support
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True
+    )
 
     with context.begin_transaction():
         context.run_migrations()

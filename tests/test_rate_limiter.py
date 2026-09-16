@@ -11,12 +11,11 @@ async def test_rate_limiter_allows_under_limit(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_rate_limiter_blocks_exceeding_requests(client: AsyncClient):
     """Ensure exceeding the rate limit returns 429 Too Many Requests."""
-    payload = {"email": "limiter_test@example.com", "password": "Password123!"}
 
     # Hit the endpoint repeatedly to exhaust the quota
     responses = []
     for _ in range(15):
-        res = await client.post("/api/auth/register", json=payload)
+        res = await client.get("/test-rate-limit")
         responses.append(res.status_code)
 
     # Confirm that at least one of the requests hit the 429 limit
